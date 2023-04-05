@@ -19,6 +19,8 @@ if __name__ == '__main__':
     import pickle
     from datetime import datetime
     from datetime import timezone
+    import warnings
+    warnings.filterwarnings("ignore")
     
     directory = os.path.dirname(os.path.abspath(__file__))
     directory = directory.replace("\\", "/") # window
@@ -28,7 +30,6 @@ if __name__ == '__main__':
     directory += '/input/'
     file_name = 'sample'
     data = pd.read_csv(directory+ file_name+ '.csv', skiprows = 4)
-    
     
     data['file_name'] = file_name
     

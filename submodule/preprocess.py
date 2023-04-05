@@ -98,6 +98,27 @@ def wisdomain_prep(data) :
     data['applicant_rep'] = data['applicant_rep'].apply(lambda x : x.lower() if str(x) != 'nan' else x)
     data['inventor'] = data['inventor'].apply(lambda x : [i.lower() for i in x] if str(x) != 'nan' else x)
     
+    # 패밀리특허 중복 확인
+    switch = 0 
+    
+    for idx, row in data.iterrows() : 
+        if str(row['family_INPADOC']) != 'nan' :
+            for family in row['family_INPADOC'] :
+                
+                if family in data['id_publication'] :
+                    switch = 1
+                    break
+                else : pass
+                
+            if switch == 1 : 
+                print('Duplicate family(INPADOC) patents exist.')
+                break
+            else : pass
+            
+    if switch == 0 : 
+        print('Duplicate family(INPADOC) patents not exist.')
+    
+    
     data = data.reset_index(drop = 1)
     
     return(data)
