@@ -68,15 +68,23 @@ if __name__ == '__main__':
     
     
     #%% 4. 텍스트 분석
-    
     import spacy
+    import textMining
     
+    
+    # p1) removing abbrevation(optional)
+    abbrev_dict = textMining.get_abbrev_dict(data_['TAF'], 3)
+    data_['TAF'] = textMining.abbrev2origin(abbrev_dict , data_['TAF'])
+    
+    # p2) removing speical character(optional)
+    data_['TAF'] = textMining.removing_sc(data_['TAF'])
+    
+    # p3) change type 2 nlp
     nlp = spacy.load("en_core_web_sm")
     data_['TAF_nlp'] = data_['TAF'].apply(lambda x : nlp(x))
     
+    #%%
     # SAO analysis
-    
-    import textMining
     from collections import Counter 
     
     data_['function_list'] = np.nan #V+O
@@ -85,13 +93,17 @@ if __name__ == '__main__':
         
         doc = row['TAF_nlp']
         function_list = textMining.get_function(doc)
-        function_list = textMining.sw_filtering(function_list)
+        function_list = textMining.sw_filtering_bigram(function_list)
 
         data_['function_list'][idx] = function_list
         
     
+    #c = Counter([x for xs in data_['function_list'] for x in set(xs)])
     
-    c = Counter([x for xs in data_['function_list'] for x in set(xs)])
+    # get tf-idf AO
+    c = textMining.tfidf_counter(data_['function_list'])
+    
+    
     
     #%% 5. 연관규칙_네트워크 분석
     
