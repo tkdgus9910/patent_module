@@ -28,13 +28,11 @@ def calculate_TS(data, group, citation_forward_count) :
     return(pii*count)
 
 def calculate_PFS(data, group, family_country_count) :
-        
     # PFS, Patent familiy size
     mean = data[family_country_count].mean()    
     return(data.groupby(group)[family_country_count].mean()/mean)
 
 def calculate_CRn(data, group, citation_forward_count,n) :
-    
     # CRn, Concentrate Ratio
     count = data.groupby(group)[citation_forward_count].count()
     total = data[citation_forward_count].count().sum()
@@ -43,7 +41,6 @@ def calculate_CRn(data, group, citation_forward_count,n) :
 
 
 def calculate_HHI(data, group, id_publication) : 
-    
     count = data.groupby(group)[id_publication].count()
     total = len(count)
     share = [i/total*100 for i in count]

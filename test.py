@@ -13,13 +13,10 @@ if __name__ == '__main__':
     
     import os
     import sys
-    import re
     import pandas as pd
     import numpy as np     
-    import pickle
-    from datetime import datetime
-    from datetime import timezone
     import warnings
+    
     warnings.filterwarnings("ignore")
     
     directory = os.path.dirname(os.path.abspath(__file__))
@@ -38,12 +35,13 @@ if __name__ == '__main__':
     
     from preprocess import wisdomain_prep
     
+    
     # from wisdomain import wisdomain_prep
     data_ = wisdomain_prep(data)    
     
 
     #%% 2. 주체별 특허지표 계산
-    import indicator
+    import indicator  
     
     # 등록특허로 필터링
     data_registered = data_.loc[data_['id_registration'] != np.nan , :]
@@ -53,6 +51,8 @@ if __name__ == '__main__':
     ts = indicator.calculate_TS(data_registered, 'applicant_rep', 'citation_forward_domestic_count')
     pfs = indicator.calculate_PFS(data_registered, 'applicant_rep', 'family_INPADOC_country_count')
     
+    data_applicants = pd.concat([cpp,pii,ts,pfs], axis=1)
+    data_applicants.columns = ['cpp','pii','ts','pfs']
     
     #%% 3. 분야 전체의 특성 계산
     
@@ -61,16 +61,54 @@ if __name__ == '__main__':
                                   'applicant_rep', 
                                   'citation_forward_domestic_count', 
                                   4)
-    
-    
         
     hhi = indicator.calculate_HHI(data_registered, 
                                   'applicant_rep', 
                                   'id_publication')
     
     
+    #%% 4. 텍스트 분석
     
-    #%% 4.  출원인 대표명화 - test
+    import spacy
+    
+    nlp = spacy.load("en_core_web_sm")
+    data_['TAF_nlp'] = data_['TAF'].apply(lambda x : nlp(x))
+    
+    # SAO analysis
+    
+    import textMining
+    from collections import Counter 
+    
+    data_['function_list'] = np.nan #V+O
+    
+    for idx, row in data_.iterrows() : 
+        
+        doc = row['TAF_nlp']
+        function_list = textMining.get_function(doc)
+        function_list = textMining.sw_filtering(function_list)
+
+        data_['function_list'][idx] = function_list
+        
+    
+    
+    c = Counter([x for xs in data_['function_list'] for x in set(xs)])
+    
+    #%% 5. 연관규칙_네트워크 분석
+    
+    import ARM
+    import pandas as pd
+    from mlxtend.preprocessing import TransactionEncoder
+    from mlxtend.frequent_patterns import apriori, association_rules
+    
+    
+    item_list = data_['function_list'].tolist()
+    frequent_itemsets = ARM.list2apriori(item_list)
+    edge_df = ARM.filtering_apriori(frequent_itemsets, 'lift', 1.5)
+        
+    
+    
+    
+    #%% 6.  출원인 대표명화 - 작업중
     import requests
     import xmltodict
     from requests.utils import quote
