@@ -31,14 +31,26 @@ if __name__ == '__main__':
     data['file_name'] = file_name
     
     
-    #%% 1. 데이터 전처리    
+    # 1. 데이터 전처리    
     
     from preprocess import wisdomain_prep
     
-    
-    # from wisdomain import wisdomain_prep
     data_ = wisdomain_prep(data)    
     
+    #%%
+    # 1-2. option : scraping description
+    
+    import scraper
+    
+    data_['description'] = dict
+    
+    for idx, row in data_.iloc[:,:].iterrows() : 
+        
+        print(idx)
+        pt_id = row['id_registration']
+        data_['description'][idx] = scraper.scraping_description(pt_id)
+    
+    data_['description_'] = scraper.preprocessing_header(data_['description'], 5)
 
     #%% 2. 주체별 특허지표 계산
     import indicator  
@@ -72,7 +84,7 @@ if __name__ == '__main__':
     import textMining
     
     
-    # p1) removing abbrevation(optional)
+    # p1) removing abbreviation(optional)
     abbrev_dict = textMining.get_abbrev_dict(data_['TAF'], 3)
     data_['TAF'] = textMining.abbrev2origin(abbrev_dict , data_['TAF'])
     
@@ -83,8 +95,7 @@ if __name__ == '__main__':
     nlp = spacy.load("en_core_web_sm")
     data_['TAF_nlp'] = data_['TAF'].apply(lambda x : nlp(x))
     
-    #%%
-    # SAO analysis
+    #%% 4-1 SAO analysis
     from collections import Counter 
     
     data_['function_list'] = np.nan #V+O
@@ -103,6 +114,7 @@ if __name__ == '__main__':
     # get tf-idf AO
     c = textMining.tfidf_counter(data_['function_list'])
     
+    #%% 4-2 LDA
     
     
     #%% 5. 연관규칙_네트워크 분석

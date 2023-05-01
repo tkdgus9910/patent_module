@@ -10,13 +10,14 @@ version: v1.0
 
 import pandas as pd
 import numpy as np 
+import re 
 
 # 출원인 대표명화
     
     # 데이터 전처리
 def wisdomain_prep(data) :
     
-    dictionary = {
+    dictionary = {    
         
         # id
         '출원번호' : 'id_application',
@@ -24,7 +25,7 @@ def wisdomain_prep(data) :
         '등록번호' : 'id_registration',
           
         # human information
-        '출원인' : 'applicant',
+        '출원인' : 'applicants',
         '출원인대표명' : 'applicant_rep',
         '출원인국가' : 'applicant_country', 
         '발명자' : 'inventor',
@@ -79,7 +80,7 @@ def wisdomain_prep(data) :
     data['CPC_mc'] = data['CPC_sc'].apply(lambda x : list(set([i[0:3] for i in x])))
     
     
-    data['applicant'] = data['applicant'].apply(lambda x : x.split('|') if str(x) != 'nan' else x)
+    data['applicants'] = data['applicants'].apply(lambda x : x.split('|') if str(x) != 'nan' else x)
     data['applicant_country'] = data['applicant_country'].apply(lambda x : x.split('|') if str(x) != 'nan' else x)
     data['inventor'] = data['inventor'].apply(lambda x : x.split('; ') if str(x) != 'nan' else x)
     data['inventor_country'] = data['inventor_country'].apply(lambda x : x.split('|') if str(x) != 'nan' else x)
@@ -94,8 +95,15 @@ def wisdomain_prep(data) :
     data['citation_backward_foreign'] = data['citation_backward_foreign'].apply(lambda x : x.split(', ') if str(x) != 'nan' else x)
     
     #
-    data['applicant'] = data['applicant'].apply(lambda x : [i.lower() for i in x] if str(x) != 'nan' else x)
-    data['applicant_rep'] = data['applicant_rep'].apply(lambda x : x.lower() if str(x) != 'nan' else x)
+    applicants_list = data['applicants'].apply(lambda x : [i.lower() for i in x] if str(x) != 'nan' else x)
+    applicants_list = prep_applicants(applicants_list)
+    data['applicants'] = applicants_list
+    
+    
+    applicant_rep_list = data['applicant_rep'].apply(lambda x : x.lower() if str(x) != 'nan' else x)
+    applicant_rep_list = prep_applicant_rep(applicant_rep_list)
+    data['applicant_rep'] = applicant_rep_list
+    
     data['inventor'] = data['inventor'].apply(lambda x : [i.lower() for i in x] if str(x) != 'nan' else x)
     
     # 패밀리특허 중복 확인
@@ -122,5 +130,35 @@ def wisdomain_prep(data) :
     data = data.reset_index(drop = 1)
     
     return(data)
+    
+def prep_applicant_rep(applicant_rep_list) :
+    
+    stopwords = ['ltd', 'llc', 'inc', 'corp', 'na', 'gmbh', 'co', 
+                 'ag', 'usaa', 'lp', 'sa', 'se', 'nv', 'plc']    
+    
+    for stop in stopwords : 
+        pattern = r"\b{}\b".format(stop)    
+        applicant_rep_list = [re.sub(pattern, "", i) if str(i) != 'nan' else i  for i  in applicant_rep_list  ]        
+    
+    applicant_rep_list = [i.split('|')[0] if str(i) != 'nan' else i  for i  in applicant_rep_list  ]        
+    applicant_rep_list = [re.sub("  ", " ", i).strip() if str(i) != 'nan' else i  for i  in applicant_rep_list  ]        
+        
+    return(applicant_rep_list)
+
+def prep_applicants(applicants_list) :
+        
+    stopwords = ['ltd', 'llc', 'inc', 'corp', 'na', 'gmbh', 'co', 
+                 'ag', 'usaa', 'lp', 'sa', 'se', 'nv', 'plc']    
+    
+    for stop in stopwords : 
+        pattern = r"\b{}\b".format(stop)    
+        applicants_list = [[re.sub(pattern, "", i) for i in x ] if str(x) != 'nan' else x for x  in applicants_list  ]        
+        
+    applicants_list = [[re.sub("  ", " ", i).strip() for i in x ] if str(x) != 'nan' else x for x  in applicants_list  ]        
+        
+    return(applicants_list)
+
+
+    
 
     
