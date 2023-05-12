@@ -121,10 +121,6 @@ if __name__ == '__main__':
     LDA_0 = textMining.LDA_gensim(word_lists)
     LDA_0.tunning_passes()    
     LDA_0.tunning_ab()    
-    
-    #%%
-    
-    
     LDA_0.tunning_k()    
     
     #%%

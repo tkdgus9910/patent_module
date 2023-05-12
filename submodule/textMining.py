@@ -374,7 +374,10 @@ class LDA_gensim :
         # 3. topic k를 결정
         perplexity_scores = []
         
-        for k in range(4, 101, 4):
+        k = 5
+        score_before = 0
+        while 1 :
+            
             lda_model = gensim.models.ldamodel.LdaModel(
                 corpus=corpus,
                 id2word=dictionary,
@@ -387,12 +390,19 @@ class LDA_gensim :
                 alpha=alpha,
                 eta=eta,
                 per_word_topics=True)
-            
+                
             self.model_list.append((k, lda_model))
             perplexity_score = lda_model.log_perplexity(corpus)
-            print("iteration : {}, pereplexity : {}".format(k,perplexity_score))
-            
+            print("iteration : {}, pereplexity : {}".format(k,perplexity_score))               
             perplexity_scores.append((k, perplexity_score))
+            
+            if k != 5 :
+                score_now = perplexity_score
+                growth_rate = (abs(score_now)-abs(score_before)) / abs(score_before)
+                if growth_rate < 0.05 : break
+                
+            k += 5
+            score_before = perplexity_score
             
     
         scores = [i[1] for i in perplexity_scores]
@@ -402,7 +412,6 @@ class LDA_gensim :
         self.k = perplexity_scores[min_index][0]
         print("best k is {}".format(self.k))
                 
-        
         
     def get_topic_doc(lda_model, corpus) :
         
