@@ -14,9 +14,13 @@ import nltk
 from gensim import models
 from gensim.corpora.dictionary import Dictionary
 from gensim.test.utils import common_corpus, common_dictionary
+from gensim.models.coherencemodel import CoherenceModel
 import gensim
 from gensim import corpora
 from collections import Counter
+from gensim.matutils import jaccard, cossim
+from sklearn.preprocessing import RobustScaler
+import multiprocessing # multiprocess
 
 
 stopwords = stopwords.words('english')
@@ -213,7 +217,7 @@ def removing_sc(texts) :
     return(texts)
     
 
-# LDA
+# 4LDA
 def get_word_list(nlp_list) :
     
     nltk.download('stopwords')
@@ -229,214 +233,229 @@ def get_word_list(nlp_list) :
                   'system', 'base', 'first', 'device', 'associate',
                   'least', 'plurality', 'may', 'whether', 'example',
                   'set', 'within', 'indicate', 'disclose', 'relate',
-                  'result', 'also', 'say', 'herein', 'among']
+                  'result', 'also', 'say', 'herein', 'among', 
+                  'another', 'current', 'second', 'first', 'third', 'part',
+                  'side', 'portion', 'member', 'unit']
     
     word_lists_ = [[word for word in inner_list if word.casefold() not in stopwords_] for inner_list in word_lists_]
     
     return(word_lists_)
     
+
 class LDA_gensim :
     
     def __init__(self, word_lists) :
         
         self.word_list = word_lists
         self.dictionary = Dictionary(word_lists)
-        self.dictionary.filter_extremes(no_below = 5) # 5번이하 등장은 제거
-        self.corpus = [common_dictionary.doc2bow(text) for text in word_lists]
-        self.passes = 1
-        self.alpha = 'auto'
-        self.eta = 'auto'
+        self.dictionary.filter_extremes(no_below = 3) # 5번이하 등장은 제거
+        self.corpus = [self.dictionary.doc2bow(text) for text in word_lists]
+        self.passes = 2
+        self.alpha = 0.1
+        self.eta = 0.1
         self.k = 20
+        self.random_state = 1234
+        
         self.model_list = []
         
-    def tunning_passes(self) :
+        self.model_final = gensim.models.ldamodel.LdaModel(
+                    corpus= self.corpus,
+                    id2word = self.dictionary,
+                    num_topics= self.k,
+                    random_state = self.random_state,
+                    passes = self.passes,
+                    alpha = self.alpha,
+                    eta = self.eta,
+                    per_word_topics = True,
+                    )
         
-        corpus = self.corpus
-        dictionary = self.dictionary
-        k = self.k
-        alpha = self.alpha
-        eta = self.eta
+    def tunning_passes(self, method = ['diversity', 'coherence']) :
+        
         self.model_list = []
         
         # 1. passes를 결정 
-        # Define the hyperparameters
-        chunksize = 2000
-        iterations = 400
-        eval_every = None
         
         # Tune the hyperparameters using the grid search
+        scores_df = pd.DataFrame()
         
-        perplexity_rank = []
+        for passes in range(2, 11, 2):
+            
+            lda_model = gensim.models.ldamodel.LdaModel(
+                corpus= self.corpus,
+                id2word = self.dictionary,
+                num_topics= self.k,
+                random_state = self.random_state,
+                passes = passes,
+                alpha = self.alpha,
+                eta = self.eta,
+                per_word_topics = True,
+                )
+            
+            
+            self.model_list.append((passes, lda_model))
+            score_dict = {}
+            score_dict['iter'] = passes
+            score_dict.update(self.evaluate_model(lda_model, method)) 
+            
+            scores_df = scores_df.append(score_dict, ignore_index = 1)
+            print("passes {}".format(passes))
         
-        for num_topics in range(10, 51, 10):
-            
-            perplexity_scores = []
-            
-            for passes in range(1, 11, 1):
-                lda_model = gensim.models.ldamodel.LdaModel(
-                    corpus= corpus,
-                    id2word=dictionary,
-                    num_topics=num_topics,
-                    random_state=100,
-                    update_every=1,
-                    chunksize=chunksize,
-                    passes=passes,
-                    iterations=iterations,
-                    alpha=alpha,
-                    eta=eta,
-                    per_word_topics=True)
-                self.model_list.append((num_topics, passes, lda_model))
-                perplexity_score = lda_model.log_perplexity(corpus)
-                perplexity_scores.append(perplexity_score)
-                print(passes, num_topics)
-            
-            min_value = min(perplexity_scores)
-            min_index = perplexity_scores.index(min_value)+1 #best index
-            perplexity_rank.append(min_index)
+        scaler = RobustScaler()
+        scaled_data = scaler.fit_transform(scores_df.iloc[:,1:])
+        scaled_df = pd.DataFrame(scaled_data)
+        scores_df['score_final'] = np.mean(scaled_df, axis = 1)
         
-        counter = Counter(perplexity_rank)
-        most_common_value = counter.most_common(1)[0][0]
+        # result_df = pd.concat([scores_df, scaled_df], axis = 1)
+        max_index = scores_df['score_final'].idxmax()
+        
+        self.passes = int(scores_df['iter'][max_index])
         
         print("best passes is {}".format(self.passes))
         
-        self.passes = most_common_value
+        self.refresh_model()
         
-    def tunning_ab(self) :
+        
+    def tunning_ab(self, method = ['diversity', 'coherence']) :
         
         # 2. alpha, beta를 결정
         
-        corpus = self.corpus
-        dictionary = self.dictionary
-        k = self.k
+        scores_df = pd.DataFrame()
         self.model_list = []
-        
-        # Define the hyperparameters
-        chunksize = 2000
-        iterations = 400
-        eval_every = None
-        passes = self.passes
         
         # Tune the hyperparameters using the grid search
-        perplexity_rank = []
-        
-        
-        alphas = list(np.logspace(-3, 0, 10))
+        alphas = list(np.logspace(-3, 0, 7))
         alphas = [round(i, 3) for i in alphas]
-        # alphas.append('auto')
-        betas = list(np.logspace(-3, 0, 10))
-        betas = [round(i, 3) for i in betas]
-        # betas.append('auto')
         
-        perplexity_scores = []
+        betas = list(np.logspace(-3, 0, 7))
+        betas = [round(i, 3) for i in betas]
+        
         
         for alpha in alphas :
-            for beta in betas :
+            for eta in betas :
+                
                 lda_model = gensim.models.ldamodel.LdaModel(
-                    corpus=corpus,
-                    id2word=dictionary,
-                    num_topics = k,
-                    random_state=100,
-                    update_every=1,
-                    chunksize=chunksize,
-                    passes = passes,
-                    iterations=iterations,
-                    alpha=alpha,
-                    eta=beta,
-                    per_word_topics=True)
-                self.model_list.append((alpha, beta, lda_model))
-                perplexity_score = lda_model.log_perplexity(corpus)
-                perplexity_scores.append((alpha, beta, perplexity_score))
-                print(alpha, beta)
+                    corpus= self.corpus,
+                    id2word = self.dictionary,
+                    num_topics= self.k,
+                    random_state = self.random_state,
+                    passes = self.passes,
+                    alpha = alpha,
+                    eta = eta,
+                    per_word_topics = True,
+                    )
+                
+                self.model_list.append((alpha, eta, lda_model))
+                score_dict = {}
+                score_dict['iter'] = [alpha, eta]
+                score_dict.update(self.evaluate_model(lda_model, method)) 
+                scores_df = scores_df.append(score_dict, ignore_index = 1)
+                
+                print("alpha, eta {},{}".format(alpha, eta))
+            
+        scaler = RobustScaler()
+        scaled_data = scaler.fit_transform(scores_df.iloc[:,1:])
+        scaled_df = pd.DataFrame(scaled_data)
+        scores_df['score_final'] = np.mean(scaled_df, axis = 1)
         
-        scores = [i[2] for i in perplexity_scores]
-        min_value = min(scores)
-        min_index = scores.index(min_value) #best index
+        # result_df = pd.concat([scores_df, scaled_df], axis = 1)
+        max_index = scores_df['score_final'].idxmax()
+            
+        self.alpha = scores_df['iter'][max_index][0]
+        self.eta = scores_df['iter'][max_index][1]
+                
+        print("best alpha, eta = {},{}".format(self.alpha, self.eta))
         
-        self.alpha = perplexity_scores[min_index][0]
-        self.eta = perplexity_scores[min_index][1]
-        
-        print("best alpha,eta is {},{}".format(self.alpha, self.eta))
+        self.refresh_model()
         
         
-    def tunning_k(self) :
         
-        corpus = self.corpus
-        dictionary = self.dictionary
-        alpha = self.alpha
-        eta = self.eta
-        passes = self.passes
+    def tunning_k(self, method = ['diversity', 'coherence']) :
+        
         self.model_list = []
         
-        chunksize = 2000
-        iterations = 400
-        eval_every = None
-        
         # 3. topic k를 결정
-        perplexity_scores = []
+        scores_df = pd.DataFrame()
         
         k = 5
-        score_before = 0
+        score_dict_before = {}
+        
         while 1 :
             
             lda_model = gensim.models.ldamodel.LdaModel(
-                corpus=corpus,
-                id2word=dictionary,
-                num_topics = k,
-                random_state=100,
-                update_every=1,
-                chunksize=chunksize,
-                passes= passes,
-                iterations=iterations,
-                alpha=alpha,
-                eta=eta,
-                per_word_topics=True)
+                corpus= self.corpus,
+                id2word = self.dictionary,
+                num_topics= k,
+                random_state = self.random_state,
+                passes = self.passes,
+                alpha = self.alpha,
+                eta = self.eta,
+                per_word_topics = True,
+                )
                 
             self.model_list.append((k, lda_model))
-            perplexity_score = lda_model.log_perplexity(corpus)
-            print("iteration : {}, pereplexity : {}".format(k,perplexity_score))               
-            perplexity_scores.append((k, perplexity_score))
             
+            score_dict = {}
+            score_dict['iter'] = k
+            score_dict.update(self.evaluate_model(lda_model, method)) 
+            
+            scores_df = scores_df.append(score_dict, ignore_index = 1)
+            print("k = {}".format(k))
+            
+            # 수렴여부 판단
             if k != 5 :
-                score_now = perplexity_score
-                growth_rate = (abs(score_now)-abs(score_before)) / abs(score_before)
-                if growth_rate < 0.05 : break
-                
+                score_dict_now = score_dict
+                growth_rate_list = []
+                for key in score_dict.keys() :
+                    if key != 'iter' :
+                        score_now = score_dict_now[key]
+                        score_before = score_dict_before[key]
+                        growth_rate_list.append((abs(score_now)-abs(score_before)) / abs(score_before))
+                        
+                if all(growth_rate < 0.05 for growth_rate in growth_rate_list) : break
+                    
             k += 5
-            score_before = perplexity_score
+            score_dict_before = score_dict
             
-    
-        scores = [i[1] for i in perplexity_scores]
-        min_value = min(scores)
-        min_index = scores.index(min_value) #best index
         
-        self.k = perplexity_scores[min_index][0]
+        scaler = RobustScaler()
+        scaled_data = scaler.fit_transform(scores_df.iloc[:,1:])
+        scaled_df = pd.DataFrame(scaled_data)
+        scores_df['score_final'] = np.mean(scaled_df, axis = 1)
+        
+        max_index = scores_df['score_final'].idxmax()
+            
+        self.k = int(scores_df['iter'][max_index])
         print("best k is {}".format(self.k))
+        
+        self.refresh_model()
+        
                 
+    def get_docTopic_matrix(self) :
         
-    def get_topic_doc(lda_model, corpus) :
-        
-        topic_doc_df = pd.DataFrame(columns = range(0, lda_model.num_topics))
+        corpus = self.corpus
+        model = self.model_final
+        topic_doc_df = pd.DataFrame(columns = range(0, model.num_topics))
         
         for corp in corpus :
-            
-            temp = lda_model.get_document_topics(corp)
+            temp = model.get_document_topics(corp)
             DICT = {}
             for tup in temp :
                 DICT[tup[0]] = tup[1]
-            
             topic_doc_df = topic_doc_df.append(DICT, ignore_index=1)
+            
         topic_doc_df = np.array(topic_doc_df)
         topic_doc_df = np.nan_to_num(topic_doc_df)
         
-        
         return(topic_doc_df)
     
-    def get_topic_word_matrix(lda_model) :
+    def get_wordTopic_matrix(self) :
+        
+        model = self.model_final
         
         topic_word_df = pd.DataFrame()
         
-        for i in range(0, lda_model.num_topics) :
-            temp = lda_model.show_topic(i, 1000)
+        for i in range(0, model.num_topics) :
+            temp = model.show_topic(i, 1000)
             DICT = {}
             for tup in temp :
                 DICT[tup[0]] = tup[1]
@@ -447,20 +466,82 @@ class LDA_gensim :
         
         return(topic_word_df)
     
-    def get_topic_topword_matrix(lda_model, num_word) :
+    def get_topwordTopic_matrix(self) :
+        
+        model = self.model_final
+        num_word = 30
         
         topic_word_df = pd.DataFrame()
         
-        for i in range(0, lda_model.num_topics) :
-            temp = lda_model.show_topic(i, num_word)
+        for i in range(0, model.num_topics) :
+            temp = model.show_topic(i, num_word)
             temp = [i[0] for i in temp]
             DICT = dict(enumerate(temp))
             
             topic_word_df = topic_word_df.append(DICT, ignore_index =1)
             
         topic_word_df = topic_word_df.transpose()
-        
         return(topic_word_df)
+        
+    def refresh_model(self) : 
+        
+        self.model_final = gensim.models.ldamodel.LdaModel(
+                    corpus= self.corpus,
+                    id2word = self.dictionary,
+                    num_topics= self.k,
+                    random_state = self.random_state,
+                    passes = self.passes,
+                    alpha = self.alpha,
+                    eta = self.eta,
+                    per_word_topics = True,
+                    )
+        
+        
+    def evaluate_model(self, model, measure_list) :
+        
+        model = model
+        corpus = self.corpus
+        dictionary = self.dictionary
+        word_list = self.word_list
+        result = {}
+        
+        if 'perplexity' in measure_list :
+            score = abs(model.log_perplexity(corpus))
+            result['perplexity'] = score
+            
+        # 토픽 내 단어 분포의 일관성
+        if 'coherence' in measure_list :
+            
+            coherence_model = CoherenceModel(model=model, 
+                                             texts=word_list, 
+                                             dictionary=dictionary, 
+                                             coherence='u_mass', topn=10)
+            
+            score = abs(coherence_model.get_coherence())
+            result['coherence'] = score
+            
+        if 'diversity' in measure_list :
+            
+            keyword_set = set()
+            # lda_model = LDA_0.model_final
+            for i in range(model.num_topics):
+                keyword_list = [i[0] for i in model.show_topic(0, 10)]
+                for keyword in keyword_list : 
+                    keyword_set.add(keyword)
+                
+            score = len(keyword_set) / (model.num_topics*10)
+            
+            result['diversity'] = score
+            
+        
+        # 토픽 간 평균 유사도
+        return(result)
+    
+    
+        
+            
+            
+            
         
         
         

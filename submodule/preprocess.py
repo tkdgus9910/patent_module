@@ -23,6 +23,7 @@ def wisdomain_prep(data) :
         '출원번호' : 'id_application',
         '공개번호' : 'id_publication',
         '등록번호' : 'id_registration',
+        '번호' : 'id_wisdomain',
           
         # human information
         '출원인' : 'applicants',
@@ -45,7 +46,9 @@ def wisdomain_prep(data) :
         
         # text
         '명칭' : 'title',
+        # '명칭(원문)' : 'title',
         '요약' : 'abstract',
+        # '요약(원문)' : 'abstract',
         '전체 청구항' : 'claims', 
         '대표 청구항' : 'claims_rep', 
         
@@ -64,12 +67,14 @@ def wisdomain_prep(data) :
         # '외국피인용특허' : 'citation_forward_foreign', 
         }
     
-    data = data[list(dictionary.keys())]
+    cols = [i for i in data.columns if i in list(dictionary.keys())]
+    data = data[cols]
     data.columns = [dictionary[i] for i in data.columns] 
     
     # data = data.dropna(subset = ['application_date']).reset_index(drop = 1)
     
-    data['year_application'] = data['date_application'].apply(lambda x : int(x.split('.')[0]))
+    data['year_application'] = data['date_application'].apply(lambda x : int(x.split('.')[0]) if str(x) != 'nan'  else x)
+    
     data['TA'] = data['title'] + '. ' + data['abstract']
     data['TAF'] = data.apply(lambda x: x.TA +' ' + x.claims_rep if str(x.claims_rep) != 'nan' else x.TA, axis= 1)
     

@@ -30,13 +30,12 @@ if __name__ == '__main__':
     
     data['file_name'] = file_name
     
-    # 1. 데이터 전처리    
-    
+    # 데이터 전처리    
     from preprocess import wisdomain_prep
     
     data_ = wisdomain_prep(data)    
     
-    #%% 1-2. option : scraping description
+    #%% 1-2. !optional : scraping description
     
     import scraper
     
@@ -50,12 +49,14 @@ if __name__ == '__main__':
     
     data_['description_'] = scraper.preprocessing_header(data_['description'], 5)
 
-    #%% 2. 주체별 특허지표 계산
+    #%% 특허지표 계산
+    
     import indicator  
     
     # 등록특허로 필터링
     data_registered = data_.loc[data_['id_registration'] != np.nan , :]
         
+    # 주체별
     cpp = indicator.calculate_CPP(data_registered, 'applicant_rep', 'citation_forward_domestic_count')
     pii = indicator.calculate_PII(data_registered, 'applicant_rep', 'citation_forward_domestic_count')
     ts = indicator.calculate_TS(data_registered, 'applicant_rep', 'citation_forward_domestic_count')
@@ -64,9 +65,7 @@ if __name__ == '__main__':
     data_applicants = pd.concat([cpp,pii,ts,pfs], axis=1)
     data_applicants.columns = ['cpp','pii','ts','pfs']
     
-    #%% 3. 분야 전체의 특성 계산
-    
-    
+    # 분야전체
     cr4 = indicator.calculate_CRn(data_registered, 
                                   'applicant_rep', 
                                   'citation_forward_domestic_count', 
@@ -76,10 +75,18 @@ if __name__ == '__main__':
                                   'applicant_rep', 
                                   'id_publication')
     
+    cagr = indicator.calculate_CAGR(data_registered, 
+                                  'year_application', 
+                                  2000,
+                                  2020)
     
     #%% 4. 텍스트 분석 준비
+    
     import spacy
     import textMining
+    import time 
+    
+    start_time = time.time()
     
     # p1) removing abbreviation(optional)
     abbrev_dict = textMining.get_abbrev_dict(data_['TAF'], 3)
@@ -90,12 +97,17 @@ if __name__ == '__main__':
     
     # p3) change type 2 nlp
     nlp = spacy.load("en_core_web_sm")
+    
     data_['TAF_nlp'] = data_['TAF'].apply(lambda x : nlp(x))
+
+    end_time = time.time()
+    execution_time = end_time - start_time
     
-    
+    print("코드 실행 시간: ", execution_time, "초")
     
     
     #%% 4-1 SAO analysis
+    
     from collections import Counter 
     
     data_['function_list'] = np.nan #V+O
@@ -117,111 +129,43 @@ if __name__ == '__main__':
     
     import textMining
     
+    # LDA 적합
     word_lists = textMining.get_word_list(data_['TAF_nlp'])
+    
     LDA_0 = textMining.LDA_gensim(word_lists)
-    LDA_0.tunning_passes()    
-    LDA_0.tunning_ab()    
-    LDA_0.tunning_k()    
+    LDA_0.tunning_passes(['perpleixty','diversity', 'coherence'])  
+    LDA_0.tunning_ab(['perpleixty','diversity', 'coherence'])
+    LDA_0.tunning_k(['perpleixty','diversity', 'coherence'])
     
-    #%%
-    model_list = LDA_0.model_list
     
-    #%%
-    model = models.LdaModel(corpus, 
-                            id2word=dictionary, 
-                            num_topics=30, 
-                            alpha = 1, eta = 0.00001, random_state=123456, passes = 10)
+    # 결과확인    
     
-    # word_lists = [[word for word in x if len(word) >= 3] for x in word_lists]
-    # word_lists = [[word for word in x if len(word) <= 20] for x in word_lists]
-    # word_lists = [text_preprocessing.removing_sw(x, stopwords) for x in word_lists]
+    # LDA_0.alpha = 0.01
+    # LDA_0.refresh_model()
+    
+    
+    docTopic_matrix = LDA_0.get_docTopic_matrix()
+    wordTopic_matrix = LDA_0.get_wordTopic_matrix()
+    topwordTopic_matrix = LDA_0.get_topwordTopic_matrix()
+    
+    import pyLDAvis.gensim_models
+    import pyLDAvis
+    
+    # 결과 변경
+    LDA_0.alpha = 0.01
+    LDA_0.refresh_model()
 
+    # LDAVis 
+    vis_data = pyLDAvis.gensim_models.prepare(LDA_0.model_final, 
+                                              LDA_0.corpus,
+                                              LDA_0.dictionary
+                                              )
+    
+    pyLDAvis.save_html(vis_data, directory+ 'test.html')
     
     
-    topic_doc_df = get_topic_doc(model, common_corpus)
-    topic_word_df = get_topic_word_matrix(model)
-    topic_topword_df = get_topic_topword_matrix(model, 30) # 상위 단어개수 수정 
-    
-    #%% 
-
-
-    #%%    
-    
-    # 3. topic k를 결정
-    model_list = []
-    
-    for k in range(10, 101, 10):
-        lda_model = gensim.models.ldamodel.LdaModel(
-            corpus=corpus,
-            id2word=dictionary,
-            num_topics = k,
-            random_state=100,
-            update_every=1,
-            chunksize=chunksize,
-            passes= most_common_value,
-            iterations=iterations,
-            alpha=best_alpha,
-            eta=best_beta,
-            per_word_topics=True)
-        model_list.append((k, lda_model))
-        print(k)
-            
-    #%%
     
     
-    perplexity_scores = []
-    coherence_scores = []
-    
-    perplexity_weight = 0.5
-    coherence_weight = 0.5
-    
-    for model in model_list:
-        
-        perplexity_score = model[1].log_perplexity(corpus)
-        perplexity_scores.append((model[0], perplexity_score))
-        
-        coherence_model_lda = gensim.models.CoherenceModel(
-            
-            model=model[1],
-            texts=word_lists_,
-            dictionary=dictionary,
-            coherence='c_v')
-        
-        coherence_score = coherence_model_lda.get_coherence()
-        coherence_scores.append((k, coherence_score))
-        # weighted_score = perplexity_weight * perplexity_score + coherence_weight * coherence_score
-            
-
-        
-    #%%
-    from sklearn.preprocessing import StandardScaler
-    scaler = StandardScaler()
-    scores = [i[2] for i in coherence_scores]
-    
-    
-    scores = np.array(scores).reshape(-1,1)
-    # scores = scaler.fit_transform(scores)
-            
-        
-            
-            
-    #%%
-    # Evaluate the models using the coherence score
-    
-        
-        #%%
-    
-    # Find the best model
-    best_model = max(scores, key=lambda x: x[2])
-    print('Best Model:', best_model)
-    
-    #%%
-    
-    
-    #%%
-    
-    coherence_model_lda.get_coherence()
-    # model[2].log_perplexity(corpus)
     
     #%% 5. 연관규칙_네트워크 분석
     
@@ -230,25 +174,136 @@ if __name__ == '__main__':
     from mlxtend.preprocessing import TransactionEncoder
     from mlxtend.frequent_patterns import apriori, association_rules
     
-    
     item_list = data_['function_list'].tolist()
     frequent_itemsets = ARM.list2apriori(item_list)
     edge_df = ARM.filtering_apriori(frequent_itemsets, 'lift', 1.5)
         
     
+    #%% 6. Claims_representative LDA
+    
+    import re 
+    # p1) removing abbreviation(optional)
+    abbrev_dict = textMining.get_abbrev_dict(data_['claims_rep'], 2)
+    data_['claims_rep'] = textMining.abbrev2origin(abbrev_dict , data_['claims_rep'])
+    #%%
+    
+    data_['claims_rep_list'] = data_['claims_rep'].apply(lambda x : re.split(';|:',x)[1:])
+    data_['claims_rep_list'] = data_['claims_rep_list'].apply(lambda x : [i.strip() for i in x])
+    data_['claims_rep_list'] = data_['claims_rep_list'].apply(lambda x : [i for i in x if len(i)>= 10])
     
     
-    #%% 6.  출원인 대표명화 - 작업중
-    import requests
-    import xmltodict
-    from requests.utils import quote
+    #%%
+    from bertopic import BERTopic
+    from sklearn.feature_extraction.text import CountVectorizer
+    from umap import UMAP
+    from hdbscan import HDBSCAN
+    from transformers.pipelines import pipeline
     
-    applicant_rep = quote('INTEL CORP') # percent encoding
+    # Define custom preprocessor function to remove numeric words
+    def remove_numeric_words(text):
+        return re.sub(r'\b\d+\b', '', text)
+
+    #%%
     
-    url = 'https://assignment-api.uspto.gov/patent/lookup?query=' + applicant_rep
-    url += '&filter=OwnerName'
-    res = requests.get(url, verify=False)
+    embedding_model = pipeline("feature-extraction",
+                               model="AI-Growth-Lab/PatentSBERTa")
+    
+    umap_model = UMAP(n_neighbors=15, 
+                      n_components=50, 
+                      min_dist=0.0, 
+                      metric='cosine', 
+                      random_state=1234)
+        
+    hdbscan_model = HDBSCAN(min_cluster_size=20, 
+                            metric='euclidean', 
+                            cluster_selection_method='eom', 
+                            prediction_data=True, 
+                            min_samples=5)
+
+    my_additional_stop_words = ['invention', 'patent', 'method', 'apparatus', 'apparatuses',
+                                'process','application', 'claim', 'priority', 'enablement', 'art', 'background',
+                                'comprising', 'consisting', 'wherein', 'embodiment', 'present','preferred',
+                                'device', 'base', 'inventive', 'aspect', 'current', 'parts', 'part',
+                                'characteristic', 'example', 'for', 'disclosure', 'examples', 'this', 'patent',]
+        
+    cv = CountVectorizer(stop_words="english")
+    default_stopwords = set(cv.get_stop_words())
+    stop_words = my_additional_stop_words +list(default_stopwords)
+    
+    vectorizer_model = CountVectorizer(stop_words=stop_words,
+                                       preprocessor=remove_numeric_words)
+    
+    topic_model = BERTopic(embedding_model=embedding_model,
+                           calculate_probabilities=False,
+                           umap_model = umap_model,
+                           hdbscan_model=hdbscan_model,
+                           vectorizer_model=vectorizer_model,
+                           top_n_words = 30,
+                           min_topic_size = 10)
+    
+    corpus = data_['claims_rep_list'].tolist()
+    corpus = sum(corpus, [])
+    
+    topics, probs = topic_model.fit_transform(corpus)
+    
+    #%%
+    temp = topic_model.get_topic_info()
+    
+    #%% YAKE를 이용한 용어 처리 - 테스트중
+    
+    from yake import KeywordExtractor
+    
+    language = 'en'
+    max_ngram_size = 3
+    deduplication_threshold = 0.7
+    window_size = 1
+    top_k = 20
+    
+    # YAKE 객체 생성
+    kw_extractor = KeywordExtractor(lan=language,
+                                        n=max_ngram_size,
+                                        dedupLim=deduplication_threshold,
+                                        windowsSize=window_size,
+                                        top=top_k)
     
     
-    result = xmltodict.parse(res.content)
+    # 텍스트 문서
+    text = data_['TAF'][0]
+    
+    # 키워드 추출
+    keywords = kw_extractor.extract_keywords(text)
+    
+    # 추출된 키워드 확인
+    for keyword in keywords:
+        print(keyword[0])  # 키워드 텍스트
+        print(keyword[1])  # 키워드 점수
+    
+    
+    result = []
+    
+    for doc in data_['claims_rep'] :
+        # doc = data_['claims_rep'][0]
+        
+        keywords = kw_extractor.extract_keywords(doc)
+        result.append(keywords)
+
+    
+    result_dict = dict()
+    
+    for k_list in result :
+        for k_tuple in k_list :
+            if k_tuple[0] not in result_dict.keys() :
+                result_dict[k_tuple[0]] = [k_tuple[1]]
+            else : 
+                result_dict[k_tuple[0]].append(k_tuple[1])
+
+    result_df = pd.DataFrame()
+    
+    for k in result_dict.keys() : 
+        if len(result_dict[k]) < 5 : continue 
+        else : result_df = result_df.append({'keyword' : k,
+                                             'score_list' : result_dict[k]}, ignore_index = 1)
+    
+    result_df['score_mean'] = result_df['score_list'].apply(lambda x : np.mean(x))
+    result_df['score_count'] = result_df['score_list'].apply(lambda x : len(x))
     

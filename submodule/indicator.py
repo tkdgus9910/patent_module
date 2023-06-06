@@ -39,11 +39,26 @@ def calculate_CRn(data, group, citation_forward_count,n) :
     share = sorted(count/total, reverse = 1) 
     return(sum(share[0:n]))
 
-
 def calculate_HHI(data, group, id_publication) : 
     count = data.groupby(group)[id_publication].count()
-    total = len(count)
+    total = data.shape[0]
     share = [i/total*100 for i in count]
     hhi = sum([i*i for i in share])
     
     return(hhi)
+
+def CAGR(first, last, periods): 
+    first = first+1
+    last = last+1
+    return (last/first)**(1/periods)-1 
+
+def calculate_CAGR(data, year_application, min_year, max_year) : 
+    
+    # min_year = min(data[year_application])
+    # max_year = max(data[year_application])
+    
+    periods = max_year-min_year
+    first = data.loc[data[year_application] == min_year , :].shape[0]
+    last = data.loc[data[year_application] == max_year , :].shape[0]
+    
+    return(CAGR(first, last, periods))
