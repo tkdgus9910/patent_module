@@ -11,17 +11,11 @@ import numpy as np
 import re
 from nltk.corpus import stopwords
 import nltk
-from gensim import models
 from gensim.corpora.dictionary import Dictionary
-from gensim.test.utils import common_corpus, common_dictionary
 from gensim.models.coherencemodel import CoherenceModel
 import gensim
-from gensim import corpora
-from collections import Counter
-from gensim.matutils import jaccard, cossim
 from sklearn.preprocessing import RobustScaler
-import multiprocessing # multiprocess
-
+from scipy.stats import entropy
 
 stopwords = stopwords.words('english')
 
@@ -224,6 +218,7 @@ def get_word_list(nlp_list) :
     
     # removing stopwords
     word_lists = [[token.lemma_.lower() for token in i] for i in nlp_list]
+    word_lists = [[token for token in i if len(token) >= 3] for i in word_lists]
 
     # c = Counter([x for xs in word_lists for x in set(xs)])
     
@@ -241,6 +236,15 @@ def get_word_list(nlp_list) :
     
     return(word_lists_)
     
+
+
+    
+def normalize2one(values):
+    total = sum(values)
+    normalized = [value / total for value in values]
+    return normalized
+
+
 
 class LDA_gensim :
     
@@ -288,10 +292,9 @@ class LDA_gensim :
                 passes = passes,
                 alpha = self.alpha,
                 eta = self.eta,
-                per_word_topics = True,
-                )
+                per_word_topics = True,)
             
-            
+            self.model_final = lda_model
             self.model_list.append((passes, lda_model))
             score_dict = {}
             score_dict['iter'] = passes
@@ -300,9 +303,12 @@ class LDA_gensim :
             scores_df = scores_df.append(score_dict, ignore_index = 1)
             print("passes {}".format(passes))
         
-        scaler = RobustScaler()
-        scaled_data = scaler.fit_transform(scores_df.iloc[:,1:])
-        scaled_df = pd.DataFrame(scaled_data)
+        # scaler = RobustScaler()
+        # scaled_data = scaler.fit_transform(scores_df.iloc[:,1:])
+        # scaled_df = pd.DataFrame(scaled_data)
+        scaled_df = scores_df.iloc[:,1:]
+        scaled_df = scaled_df / scaled_df.max()
+        
         scores_df['score_final'] = np.mean(scaled_df, axis = 1)
         
         # result_df = pd.concat([scores_df, scaled_df], axis = 1)
@@ -313,6 +319,8 @@ class LDA_gensim :
         print("best passes is {}".format(self.passes))
         
         self.refresh_model()
+        
+        return(scores_df)
         
         
     def tunning_ab(self, method = ['diversity', 'coherence']) :
@@ -344,6 +352,7 @@ class LDA_gensim :
                     per_word_topics = True,
                     )
                 
+                self.model_final = lda_model
                 self.model_list.append((alpha, eta, lda_model))
                 score_dict = {}
                 score_dict['iter'] = [alpha, eta]
@@ -352,9 +361,12 @@ class LDA_gensim :
                 
                 print("alpha, eta {},{}".format(alpha, eta))
             
-        scaler = RobustScaler()
-        scaled_data = scaler.fit_transform(scores_df.iloc[:,1:])
-        scaled_df = pd.DataFrame(scaled_data)
+        # scaler = RobustScaler()
+        # scaled_data = scaler.fit_transform(scores_df.iloc[:,1:])
+        # scaled_df = pd.DataFrame(scaled_data)
+        scaled_df = scores_df.iloc[:,1:]
+        scaled_df = scaled_df / scaled_df.max()
+        
         scores_df['score_final'] = np.mean(scaled_df, axis = 1)
         
         # result_df = pd.concat([scores_df, scaled_df], axis = 1)
@@ -367,6 +379,8 @@ class LDA_gensim :
         
         self.refresh_model()
         
+        return(scores_df)
+        
         
         
     def tunning_k(self, method = ['diversity', 'coherence']) :
@@ -376,7 +390,8 @@ class LDA_gensim :
         # 3. topic k를 결정
         scores_df = pd.DataFrame()
         
-        k = 5
+        unit = 5
+        k = unit
         score_dict_before = {}
         
         while 1 :
@@ -391,7 +406,8 @@ class LDA_gensim :
                 eta = self.eta,
                 per_word_topics = True,
                 )
-                
+            
+            self.model_final = lda_model
             self.model_list.append((k, lda_model))
             
             score_dict = {}
@@ -402,7 +418,7 @@ class LDA_gensim :
             print("k = {}".format(k))
             
             # 수렴여부 판단
-            if k != 5 :
+            if k != unit :
                 score_dict_now = score_dict
                 growth_rate_list = []
                 for key in score_dict.keys() :
@@ -411,15 +427,21 @@ class LDA_gensim :
                         score_before = score_dict_before[key]
                         growth_rate_list.append((abs(score_now)-abs(score_before)) / abs(score_before))
                         
-                if all(growth_rate < 0.05 for growth_rate in growth_rate_list) : break
+                
+                print(growth_rate_list)
+                
+                if all(growth_rate < 0.025 for growth_rate in growth_rate_list) : break
                     
-            k += 5
+            k += unit
             score_dict_before = score_dict
             
         
-        scaler = RobustScaler()
-        scaled_data = scaler.fit_transform(scores_df.iloc[:,1:])
-        scaled_df = pd.DataFrame(scaled_data)
+        # scaler = RobustScaler()
+        # scaled_data = scaler.fit_transform(scores_df.iloc[:,1:])
+        # scaled_df = pd.DataFrame(scaled_data)
+        scaled_df = scores_df.iloc[:,1:]
+        scaled_df = scaled_df / scaled_df.max()
+        
         scores_df['score_final'] = np.mean(scaled_df, axis = 1)
         
         max_index = scores_df['score_final'].idxmax()
@@ -429,26 +451,37 @@ class LDA_gensim :
         
         self.refresh_model()
         
+        return(scores_df)
+        
                 
-    def get_docTopic_matrix(self) :
+    def get_docByTopics(self) :
         
         corpus = self.corpus
         model = self.model_final
-        topic_doc_df = pd.DataFrame(columns = range(0, model.num_topics))
+        docByTopics = pd.DataFrame(columns = range(0, model.num_topics))
         
         for corp in corpus :
-            temp = model.get_document_topics(corp)
+            temp = model.get_document_topics(corp, minimum_probability = 0)
             DICT = {}
             for tup in temp :
                 DICT[tup[0]] = tup[1]
-            topic_doc_df = topic_doc_df.append(DICT, ignore_index=1)
+            docByTopics = docByTopics.append(DICT, ignore_index=1)
             
-        topic_doc_df = np.array(topic_doc_df)
-        topic_doc_df = np.nan_to_num(topic_doc_df)
+        docByTopics = np.array(docByTopics)
+        self.docByTopics = np.nan_to_num(docByTopics)
         
-        return(topic_doc_df)
+        return(self.docByTopics)
     
-    def get_wordTopic_matrix(self) :
+    def get_topicProportion(self) : 
+        
+        # docTopic_matrix = self.get_docTopic_matrix()
+        topic_size = self.docByTopics.sum(axis =0)
+        topic_prop = normalize2one(topic_size)
+        self.topicProportion = topic_prop
+        
+        return(self.topicProportion)  
+        
+    def get_wordByTopics(self) :
         
         model = self.model_final
         
@@ -466,10 +499,9 @@ class LDA_gensim :
         
         return(topic_word_df)
     
-    def get_topwordTopic_matrix(self) :
+    def get_topwordByTopics(self, num_word = 30) :
         
         model = self.model_final
-        num_word = 30
         
         topic_word_df = pd.DataFrame()
         
@@ -482,6 +514,119 @@ class LDA_gensim :
             
         topic_word_df = topic_word_df.transpose()
         return(topic_word_df)
+    
+    def get_topwordthetaByTopics(self, num_word = 30) :
+        
+        model = self.model_final
+        
+        topic_word_df = pd.DataFrame()
+        
+        for i in range(0, model.num_topics) :
+            temp = model.show_topic(i, num_word)
+            temp = [i[1] for i in temp]
+            DICT = dict(enumerate(temp))
+            
+            topic_word_df = topic_word_df.append(DICT, ignore_index =1)
+            
+        topic_word_df = topic_word_df.transpose()
+        return(topic_word_df)
+    
+    def CAGR(first, last, periods): 
+        first = first+1
+        last = last+1
+        return (last/first)**(1/periods)-1  
+    
+    def get_topic_cutoff(self, method) :
+        
+        temp =  np.ravel(self.docByTopics, order='C').tolist()
+        
+        if method == 'iqr' : 
+            # cut-off 계산    
+            Q1 = np.quantile(temp, 0.25)
+            Q3 = np.quantile(temp, 0.75)
+            IQR = np.quantile(temp, 0.75) - np.quantile(temp, 0.25)
+            
+            cut_off = Q3 + 1.5*IQR #2.4 #1.5 # 1.17 #0.8
+        
+        elif method == 'sigma' :
+            cut_off = np.mean(temp)+ 2*np.std(temp) # mu + sigma
+        
+        self.topic_cutoff = cut_off
+        
+        return (self.topic_cutoff)
+    
+    def get_topic_time(data, col_time, col_topics) : 
+        
+        result_df = pd.DataFrame()
+        
+        for platform in set(data[col_time]) :
+            
+            temp_data_ = data.loc[data[col_time] == platform,:].reset_index(drop = 1)
+            _list = temp_data_[col_topics].tolist()
+            
+            c = Counter(c for clist in _list for c in clist)
+            # c = sorted(c.items(),key = lambda i: i[0])
+            result_df = result_df.append(c, ignore_index =  1)
+            
+        result_df.index = set(data[col_time])
+        result_df = result_df.sort_index(axis=1)
+        result_df = result_df.fillna(0)
+        
+        return(result_df)
+    
+    def get_summary_topic_time(topic_time_df, recent_period) :
+        
+        end_year = max(topic_time_df.index)
+        start_year= min(topic_time_df.index)
+        total_period = end_year - start_year +1
+        recent_year = end_year-(recent_period-1)
+        
+        # print(recent_year)
+        
+        topic_time_df_recent = topic_time_df.loc[topic_time_df.index >= recent_year,:]
+        
+        volume = topic_time_df.apply(lambda x : np.sum(x))
+        volume_recent = topic_time_df_recent.apply(lambda x : np.sum(x))
+        
+        cagr = topic_time_df.apply(lambda x : CAGR(x[start_year], x[end_year], total_period))
+        cagr_recent = topic_time_df_recent.apply(lambda x : CAGR(x[recent_year], x[end_year], recent_period))
+        
+        result = pd.concat([volume, volume_recent, cagr, cagr_recent], axis = 1)
+        
+        result.columns = ['volume', 'volume_recent', 'CAGR', 'CAGR_recent']
+        result['topic'] = result.index      
+        
+        result = result[['topic','volume', 'volume_recent', 'CAGR', 'CAGR_recent']]
+        
+        return(result)
+    
+    def get_most_similar_doc2topic(self, data_sample, 
+                                   top_n = 5, 
+                                   title = 'title', 
+                                   date = 'date') :
+        
+        result_df = pd.DataFrame()
+        title = title
+        
+        for col in range(self.docByTopics.shape[1]) :
+            
+            DICT = {}
+        
+            for n in range(1, top_n+1) :
+                
+                idx = self.docByTopics.argsort(axis = 0)[-n][col]
+                DICT['topic'] = col
+                DICT['rank'] = n
+                DICT['title'] = data_sample[title][idx]
+                DICT['date'] = data_sample[date][idx]
+                DICT['similarity'] = self.docByTopics[idx,col]
+            
+                result_df = result_df.append(DICT, ignore_index=1)
+                
+        self.most_similar_doct2topic = result_df
+        
+        return(result_df)
+    
         
     def refresh_model(self) : 
         
@@ -522,14 +667,44 @@ class LDA_gensim :
             
         if 'diversity' in measure_list :
             
-            keyword_set = set()
-            # lda_model = LDA_0.model_final
-            for i in range(model.num_topics):
-                keyword_list = [i[0] for i in model.show_topic(0, 10)]
-                for keyword in keyword_list : 
-                    keyword_set.add(keyword)
+            # keyword_set = set()
+            # for topic in range(model.num_topics):
+            #     keyword_list = [i[0] for i in model.show_topic(topic, 10)]
+            #     for keyword in keyword_list : 
+            #         keyword_set.add(keyword)
                 
-            score = len(keyword_set) / (model.num_topics*10)
+            # score = len(keyword_set) / (model.num_topics*10)
+            
+            
+            docTopic_matrix = self.get_docByTopics()
+            topic_size = docTopic_matrix.sum(axis =0)
+            topic_prop = normalize2one(topic_size)
+            topwordTopics_matrix = self.get_topwordByTopics(10)
+            topwordthetaTopics_matrix = self.get_topwordthetaByTopics(10)
+            
+            for col in topwordthetaTopics_matrix.columns : 
+                topwordthetaTopics_matrix[col] = normalize2one(topwordthetaTopics_matrix[col]) 
+                 
+            result_dict = {}
+            
+            for col in topwordTopics_matrix.columns : 
+                
+                weight = topic_prop[col]
+                
+                for idx, word in enumerate(topwordTopics_matrix[col]) : 
+                # word = topwordTopics_matrix[col]
+                    value = topwordthetaTopics_matrix[col][idx] * weight
+                    if word in result_dict.keys() : 
+                        result_dict[word].append(value)
+                    else : 
+                        result_dict[word] = [value]
+                        
+            for key in result_dict.keys() :
+                result_dict[key] = np.sum(result_dict[key])
+            
+            base = 2  # work in units of bits
+            temp = list(result_dict.values())
+            score = entropy(temp, base=base)
             
             result['diversity'] = score
             
@@ -537,14 +712,33 @@ class LDA_gensim :
         # 토픽 간 평균 유사도
         return(result)
     
+    def save(self, directory, file_name, data) :
+        
+        
+        writer = pd.ExcelWriter(directory + 'LDA_results_'+file_name+'.xlsx', 
+                                engine = 'xlsxwriter')
+        
+        data.to_excel(writer , sheet_name = 'data', index = 1)
+        pd.DataFrame(self.docTopic_matrix).to_excel(writer , sheet_name = 'docByTopics', index = 1)
+        pd.DataFrame(self.topic_prop.items(), columns = ['topic', 'volumn']).to_excel(writer , sheet_name = 'topic_proportion', index = 1)
+        
+        self.topwordTopic_matrix .to_excel(writer , sheet_name = 'topwordByTopics', index = 1)
+        self.title.to_excel(writer , sheet_name = 'titleByTopics', index = 1)
+        self.wordTopic_matrix.to_excel(writer , sheet_name = 'wordByTopics', index = 1)
+        # result.to_excel(writer , sheet_name = 'topic_volume_cagr', index = 1)
+        
+        writer.save()
+        writer.close()
+        
+        
     
         
             
-            
-            
         
-        
-        
+def CAGR(first, last, periods): 
+    first = first+1
+    last = last+1
+    return (last/first)**(1/periods)-1  
     
     
     

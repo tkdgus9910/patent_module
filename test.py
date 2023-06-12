@@ -25,7 +25,7 @@ if __name__ == '__main__':
     
     # load data
     directory += '/input/'
-    file_name = 'sample'
+    file_name = 'sample_2'
     data = pd.read_csv(directory+ file_name+ '.csv', skiprows = 4)
     
     data['file_name'] = file_name
@@ -105,8 +105,63 @@ if __name__ == '__main__':
     
     print("코드 실행 시간: ", execution_time, "초")
     
+    #%% 4-1 LDA analysis
     
-    #%% 4-1 SAO analysis
+    import textMining
+    
+    # LDA 적합
+    word_lists = textMining.get_word_list(data_['TAF_nlp'])
+    LDA_0 = textMining.LDA_gensim(word_lists)
+    
+    tunning_df = LDA_0.tunning_passes(['perplexity','diversity', 'coherence']) 
+    tunning_df = LDA_0.tunning_ab(['perplexity','diversity', 'coherence'])
+    #%%
+    tunning_df = LDA_0.tunning_k(method = ['perplexity','diversity', 'coherence'])
+    
+    #%%
+    
+    
+    
+    #%%
+    
+    # 결과확인    
+    # LDA_0.alpha = 0.01
+    # LDA_0.refresh_model()
+    
+    docTopic_matrix = LDA_0.get_docByTopics()
+    wordTopic_matrix = LDA_0.get_wordByTopics()
+    topwordTopic_matrix = LDA_0.get_topwordByTopics()
+    topic_prop = LDA_0.get_topicProportion()
+
+    
+    title = LDA_0.get_most_similar_doc2topic(data, title = 'title', date = 'Year')
+    
+    
+    #%%
+    LDA_0.k = 200
+    LDA_0.refresh_model()
+    
+    
+    #%%
+    import pyLDAvis.gensim_models
+    import pyLDAvis
+    
+    # 결과 변경
+    LDA_0.alpha = 0.01
+    LDA_0.refresh_model()
+
+    # LDAVis 
+    vis_data = pyLDAvis.gensim_models.prepare(LDA_0.model_final, 
+                                              LDA_0.corpus,
+                                              LDA_0.dictionary
+                                              )
+    
+    pyLDAvis.save_html(vis_data, directory+ 'test.html')
+    
+    
+    
+    
+    #%% 4-2 SAO analysis
     
     from collections import Counter 
     
@@ -126,42 +181,6 @@ if __name__ == '__main__':
     c = textMining.tfidf_counter(data_['function_list'])
     
     #%% 4-2 LDA analysis
-    
-    import textMining
-    
-    # LDA 적합
-    word_lists = textMining.get_word_list(data_['TAF_nlp'])
-    
-    LDA_0 = textMining.LDA_gensim(word_lists)
-    LDA_0.tunning_passes(['perpleixty','diversity', 'coherence'])  
-    LDA_0.tunning_ab(['perpleixty','diversity', 'coherence'])
-    LDA_0.tunning_k(['perpleixty','diversity', 'coherence'])
-    
-    
-    # 결과확인    
-    
-    # LDA_0.alpha = 0.01
-    # LDA_0.refresh_model()
-    
-    
-    docTopic_matrix = LDA_0.get_docTopic_matrix()
-    wordTopic_matrix = LDA_0.get_wordTopic_matrix()
-    topwordTopic_matrix = LDA_0.get_topwordTopic_matrix()
-    
-    import pyLDAvis.gensim_models
-    import pyLDAvis
-    
-    # 결과 변경
-    LDA_0.alpha = 0.01
-    LDA_0.refresh_model()
-
-    # LDAVis 
-    vis_data = pyLDAvis.gensim_models.prepare(LDA_0.model_final, 
-                                              LDA_0.corpus,
-                                              LDA_0.dictionary
-                                              )
-    
-    pyLDAvis.save_html(vis_data, directory+ 'test.html')
     
     
     
