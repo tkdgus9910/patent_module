@@ -393,6 +393,7 @@ class LDA_gensim :
         unit = 5
         k = unit
         score_dict_before = {}
+        stack = 0
         
         while 1 :
             
@@ -418,6 +419,7 @@ class LDA_gensim :
             print("k = {}".format(k))
             
             # 수렴여부 판단
+            
             if k != unit :
                 score_dict_now = score_dict
                 growth_rate_list = []
@@ -430,7 +432,15 @@ class LDA_gensim :
                 
                 print(growth_rate_list)
                 
-                if all(growth_rate < 0.025 for growth_rate in growth_rate_list) : break
+                if all(growth_rate < 0.025 for growth_rate in growth_rate_list) : 
+                    stack +=1
+                    
+                else :
+                    stack = 0
+                
+                print(stack)
+                
+                if stack >= 3 : break
                     
             k += unit
             score_dict_before = score_dict

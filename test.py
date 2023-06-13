@@ -115,10 +115,7 @@ if __name__ == '__main__':
     
     tunning_df = LDA_0.tunning_passes(['perplexity','diversity', 'coherence']) 
     tunning_df = LDA_0.tunning_ab(['perplexity','diversity', 'coherence'])
-    #%%
     tunning_df = LDA_0.tunning_k(method = ['perplexity','diversity', 'coherence'])
-    
-    #%%
     
     
     

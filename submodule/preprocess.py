@@ -47,8 +47,10 @@ def wisdomain_prep(data) :
         # text
         '명칭' : 'title',
         # '명칭(원문)' : 'title',
+        
         '요약' : 'abstract',
         # '요약(원문)' : 'abstract',
+        
         '전체 청구항' : 'claims', 
         '대표 청구항' : 'claims_rep', 
         
@@ -68,6 +70,13 @@ def wisdomain_prep(data) :
         }
     
     cols = [i for i in data.columns if i in list(dictionary.keys())]
+    
+    if 'title' not in cols :
+        dictionary['명칭(원문)'] = 'title'
+        dictionary['요약(원문)'] = 'abstract'
+    
+    cols = [i for i in data.columns if i in list(dictionary.keys())]
+        
     data = data[cols]
     data.columns = [dictionary[i] for i in data.columns] 
     
