@@ -84,26 +84,37 @@ if __name__ == '__main__':
     
     import spacy
     import textMining
-    import time 
     
-    start_time = time.time()
+    
+    import re 
+    # p1) removing abbreviation(optional)
+    corpus = data_['claims_rep']
+    #%%
+    abbrev_dict = textMining.get_abbrev_dict(data_['claims_rep'], 2)
+    
+    data_['claims_rep'] = textMining.abbrev2origin(abbrev_dict , data_['claims_rep'])
+    data_['claims_rep_list'] = data_['claims_rep'].apply(lambda x : re.split(';|:',x)[1:])
+    data_['claims_rep_list'] = data_['claims_rep_list'].apply(lambda x : [i.strip() for i in x])
+    data_['claims_rep_list'] = data_['claims_rep_list'].apply(lambda x : [i for i in x if len(i)>= 10])
+    
+    
+    
+    
+    #%%
+    
     
     # p1) removing abbreviation(optional)
-    abbrev_dict = textMining.get_abbrev_dict(data_['TAF'], 3)
-    data_['TAF'] = textMining.abbrev2origin(abbrev_dict , data_['TAF'])
+    corpus = data_['TAF']
+    abbrev_dict = textMining.get_abbrev_dict(corpus, 3)
+    corpus = textMining.abbrev2origin(abbrev_dict , corpus)
     
     # p2) removing speical character(optional)
-    data_['TAF'] = textMining.removing_sc(data_['TAF'])
+    corpus = textMining.removing_sc(corpus)
     
     # p3) change type 2 nlp
     nlp = spacy.load("en_core_web_sm")
     
-    data_['TAF_nlp'] = data_['TAF'].apply(lambda x : nlp(x))
-
-    end_time = time.time()
-    execution_time = end_time - start_time
-    
-    print("코드 실행 시간: ", execution_time, "초")
+    data_['TAF_nlp'] = corpus.apply(lambda x : nlp(x))
     
     #%% 4-1 LDA analysis
     
@@ -122,7 +133,7 @@ if __name__ == '__main__':
     #%%
     
     # 결과확인    
-    # LDA_0.alpha = 0.01
+    # LDA_0.alpha = 0.01 
     # LDA_0.refresh_model()
     
     docTopic_matrix = LDA_0.get_docByTopics()
@@ -177,8 +188,6 @@ if __name__ == '__main__':
     # get tf-idf AO
     c = textMining.tfidf_counter(data_['function_list'])
     
-    #%% 4-2 LDA analysis
-    
     
     
     
@@ -201,11 +210,18 @@ if __name__ == '__main__':
     # p1) removing abbreviation(optional)
     abbrev_dict = textMining.get_abbrev_dict(data_['claims_rep'], 2)
     data_['claims_rep'] = textMining.abbrev2origin(abbrev_dict , data_['claims_rep'])
-    #%%
     
     data_['claims_rep_list'] = data_['claims_rep'].apply(lambda x : re.split(';|:',x)[1:])
     data_['claims_rep_list'] = data_['claims_rep_list'].apply(lambda x : [i.strip() for i in x])
     data_['claims_rep_list'] = data_['claims_rep_list'].apply(lambda x : [i for i in x if len(i)>= 10])
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     #%%
@@ -229,7 +245,7 @@ if __name__ == '__main__':
                       min_dist=0.0, 
                       metric='cosine', 
                       random_state=1234)
-        
+    
     hdbscan_model = HDBSCAN(min_cluster_size=20, 
                             metric='euclidean', 
                             cluster_selection_method='eom', 
